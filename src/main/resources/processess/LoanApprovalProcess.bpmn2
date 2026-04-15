@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn2:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:bamoe="http://bamoe.example.com/form"
+                   id="Definition"
+                   targetNamespace="http://www.example.com/process">
+
+    <!-- TYPE DEFINITIONS -->
+    <bpmn2:itemDefinition id="xsd_int" structureRef="java.lang.Integer"/>
+    <bpmn2:itemDefinition id="xsd_bool" structureRef="java.lang.Boolean"/>
+
+    <bpmn2:process id="LoanApprovalProcess" name="Loan Approval" isExecutable="true">
+
+        <!-- VARIABLES -->
+        <bpmn2:property id="amount" itemSubjectRef="xsd_int"/>
+        <bpmn2:property id="approved" itemSubjectRef="xsd_bool"/>
+
+        <!-- START -->
+        <bpmn2:startEvent id="StartEvent_1" name="Start"/>
+
+        <!-- USER TASK (FORM) -->
+        <bpmn2:userTask id="UserTask_FillForm" name="Fill Loan Application Form">
+            <bpmn2:incoming>flow_start</bpmn2:incoming>
+            <bpmn2:outgoing>flow_to_gateway</bpmn2:outgoing>
+
+            <!-- IO SPEC -->
+            <bpmn2:ioSpecification id="IOSpec_FillForm">
+                <bpmn2:dataInput id="DataInput_Form" name="form"/>
+                <bpmn2:dataOutput id="DataOutput_FormData" name="formData"/>
+                <bpmn2:inputSet>
+                    <bpmn2:dataInputRefs>DataInput_Form</bpmn2:dataInputRefs>
+                </bpmn2:inputSet>
+                <bpmn2:outputSet>
+                    <bpmn2:dataOutputRefs>DataOutput_FormData</bpmn2:dataOutputRefs>
+                </bpmn2:outputSet>
+            </bpmn2:ioSpecification>
+
+            <!-- FORM BINDING -->
+            <bpmn2:extensionElements>
+                <bamoe:form formName="loanApplicationForm"/>
+            </bpmn2:extensionElements>
+        </bpmn2:userTask>
+
+        <!-- GATEWAY -->
+        <bpmn2:exclusiveGateway id="Gateway_1"
+                                name="Check Amount"
+                                gatewayDirection="Diverging"
+                                default="flow_reject"/>
+
+        <!-- SCRIPT TASK -->
+        <bpmn2:scriptTask id="Task_Approve" name="Auto Approve" scriptFormat="java">
+            <bpmn2:incoming>flow_approve</bpmn2:incoming>
+            <bpmn2:outgoing>flow_to_end</bpmn2:outgoing>
+            <bpmn2:script>
+                approved = Boolean.TRUE;
+            </bpmn2:script>
+        </bpmn2:scriptTask>
+
+        <!-- END EVENTS -->
+        <bpmn2:endEvent id="End_Approved" name="Approved">
+            <bpmn2:incoming>flow_to_end</bpmn2:incoming>
+        </bpmn2:endEvent>
+
+        <bpmn2:endEvent id="End_Rejected" name="Rejected">
+            <bpmn2:incoming>flow_reject</bpmn2:incoming>
+        </bpmn2:endEvent>
+
+        <!-- FLOWS -->
+
+        <!-- Start → User Task -->
+        <bpmn2:sequenceFlow id="flow_start"
+                            sourceRef="StartEvent_1"
+                            targetRef="UserTask_FillForm"/>
+
+        <!-- User Task → Gateway -->
+        <bpmn2:sequenceFlow id="flow_to_gateway"
+                            sourceRef="UserTask_FillForm"
+                            targetRef="Gateway_1"/>
+
+        <!-- Gateway → Approve -->
+        <bpmn2:sequenceFlow id="flow_approve"
+                            sourceRef="Gateway_1"
+                            targetRef="Task_Approve">
+            <bpmn2:conditionExpression xsi:type="bpmn2:tFormalExpression">
+                <![CDATA[ return ((Integer)amount) > 50000; ]]>
+            </bpmn2:conditionExpression>
+        </bpmn2:sequenceFlow>
+
+        <!-- Gateway → Reject -->
+        <bpmn2:sequenceFlow id="flow_reject"
+                            sourceRef="Gateway_1"
+                            targetRef="End_Rejected"/>
+
+        <!-- Approve → End -->
+        <bpmn2:sequenceFlow id="flow_to_end"
+                            sourceRef="Task_Approve"
+                            targetRef="End_Approved"/>
+
+    </bpmn2:process>
+
+</bpmn2:definitions>

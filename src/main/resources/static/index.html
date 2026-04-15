@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loan Application</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .form-subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .form-section:last-child {
+            border-bottom: none;
+        }
+
+        .form-section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="tel"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="tel"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .error {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        input.invalid,
+        select.invalid {
+            border-color: #e74c3c;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Loan Application</h1>
+    <p class="form-subtitle">Please fill in the form below to apply for a loan</p>
+
+    <form id="loanForm">
+        <!-- Personal Information Section -->
+        <div class="form-section">
+            <div class="form-section-title">Personal Information</div>
+
+            <div class="form-group">
+                <label for="applicantName">Full Name *</label>
+                <input type="text" id="applicantName" name="applicantName" required placeholder="Enter your full name">
+                <div class="error"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="applicantEmail">Email Address *</label>
+                <input type="email" id="applicantEmail" name="applicantEmail" required placeholder="your.email@example.com">
+                <div class="error"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="applicantPhone">Phone Number *</label>
+                <input type="tel" id="applicantPhone" name="applicantPhone" required placeholder="555-123-4567">
+                <div class="error"></div>
+            </div>
+        </div>
+
+        <!-- Loan Details Section -->
+        <div class="form-section">
+            <div class="form-section-title">Loan Details</div>
+
+            <div class="form-group">
+                <label for="loanAmount">Loan Amount (USD) *</label>
+                <input type="number" id="loanAmount" name="loanAmount" required placeholder="300000" min="50000" max="5000000">
+                <div class="error"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="loanTerm">Loan Term (Months) *</label>
+                <select id="loanTerm" name="loanTerm" required>
+                    <option value="">-- Select loan term --</option>
+                    <option value="12">12 months</option>
+                    <option value="24">24 months</option>
+                    <option value="36">36 months</option>
+                    <option value="60">60 months (5 years)</option>
+                    <option value="120">120 months (10 years)</option>
+                    <option value="180">180 months (15 years)</option>
+                    <option value="360">360 months (30 years)</option>
+                </select>
+                <div class="error"></div>
+            </div>
+        </div>
+
+        <!-- Financial Information Section -->
+        <div class="form-section">
+            <div class="form-section-title">Financial Information</div>
+
+            <div class="form-group">
+                <label for="annualIncome">Annual Income (USD) *</label>
+                <input type="number" id="annualIncome" name="annualIncome" required placeholder="100000" min="20000" max="10000000">
+                <div class="error"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="creditScore">Credit Score *</label>
+                <input type="number" id="creditScore" name="creditScore" required placeholder="750" min="300" max="850">
+                <div class="error"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="employmentStatus">Employment Status *</label>
+                <select id="employmentStatus" name="employmentStatus" required>
+                    <option value="">-- Select status --</option>
+                    <option value="EMPLOYED">Employed</option>
+                    <option value="SELF_EMPLOYED">Self-Employed</option>
+                    <option value="UNEMPLOYED">Unemployed</option>
+                    <option value="RETIRED">Retired</option>
+                </select>
+                <div class="error"></div>
+            </div>
+        </div>
+
+        <!-- Agreement Section -->
+        <div class="form-section">
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="termsAccepted" name="termsAccepted" required>
+                    <label for="termsAccepted" style="margin-bottom: 0;">I agree to the terms and conditions *</label>
+                </div>
+                <div class="error"></div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="loading">
+            <div class="spinner"></div>
+            <p>Submitting your application...</p>
+        </div>
+
+        <!-- Success Message -->
+        <div class="success-message">
+            <strong>Success!</strong> Your loan application has been submitted. Application ID: <span id="appId"></span>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="submit-btn">Submit Application</button>
+    </form>
+</div>
+
+<script>
+    const form = document.getElementById('loanForm');
+    const loading = document.querySelector('.loading');
+    const successMessage = document.querySelector('.success-message');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        // Collect form data
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData);
+
+        // Client-side validation
+        if (!validateForm(data)) {
+            return;
+        }
+
+        // Show loading
+        loading.style.display = 'block';
+
+        try {
+            // Submit to server
+            const response = await fetch('/api/forms/loan-application/submit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Show success message
+                document.getElementById('appId').textContent = result.applicationId;
+                successMessage.classList.add('show');
+
+                // Reset form
+                form.reset();
+
+                // Hide success message after 5 seconds
+                setTimeout(() => {
+                    successMessage.classList.remove('show');
+                }, 5000);
+            } else {
+                // Show validation errors
+                displayErrors(result.errors);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
+        } finally {
+            loading.style.display = 'none';
+        }
+    });
+
+    function validateForm(data) {
+        let isValid = true;
+        const errors = {};
+
+        // Required field validation
+        const requiredFields = ['applicantName', 'applicantEmail', 'applicantPhone', 'loanAmount', 'loanTerm', 'annualIncome', 'creditScore', 'employmentStatus', 'termsAccepted'];
+
+        requiredFields.forEach(field => {
+            const element = document.getElementById(field);
+            if (!data[field] || (field === 'termsAccepted' && !element.checked)) {
+                isValid = false;
+                errors[field] = 'This field is required';
+            }
+        });
+
+        displayErrors(errors);
+        return isValid;
+    }
+
+    function displayErrors(errors) {
+        // Clear previous errors
+        document.querySelectorAll('.error').forEach(el => {
+            el.classList.remove('show');
+            el.parentElement.querySelector('input, select')?.classList.remove('invalid');
+        });
+
+        // Display new errors
+        Object.keys(errors).forEach(field => {
+            const input = document.getElementById(field);
+            if (input) {
+                const errorDiv = input.parentElement.querySelector('.error');
+                if (errorDiv) {
+                    errorDiv.textContent = errors[field];
+                    errorDiv.classList.add('show');
+                    input.classList.add('invalid');
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

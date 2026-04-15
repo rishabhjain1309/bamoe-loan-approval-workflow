@@ -1,0 +1,130 @@
+{
+  "id": "loanApplicationForm",
+  "name": "Loan Application Form",
+  "title": "Loan Application",
+  "description": "Please fill in your loan application details",
+  "type": "form",
+  "fields": [
+    {
+      "name": "applicantName",
+      "label": "Full Name",
+      "type": "text",
+      "required": true,
+      "placeholder": "Enter your full name",
+      "validation": {
+        "minLength": 3,
+        "maxLength": 100,
+        "pattern": "^[a-zA-Z ]+$"
+      }
+    },
+    {
+      "name": "applicantEmail",
+      "label": "Email Address",
+      "type": "email",
+      "required": true,
+      "placeholder": "your.email@example.com",
+      "validation": {
+        "pattern": "^[^@]+@[^@]+\\.[^@]+$"
+      }
+    },
+    {
+      "name": "applicantPhone",
+      "label": "Phone Number",
+      "type": "tel",
+      "required": true,
+      "placeholder": "555-123-4567",
+      "validation": {
+        "pattern": "^[0-9\\-\\+]{10,}$"
+      }
+    },
+    {
+      "name": "loanAmount",
+      "label": "Loan Amount (USD)",
+      "type": "number",
+      "required": true,
+      "placeholder": "300000",
+      "validation": {
+        "min": 50000,
+        "max": 5000000
+      }
+    },
+    {
+      "name": "loanTerm",
+      "label": "Loan Term (Months)",
+      "type": "select",
+      "required": true,
+      "options": [
+        { "label": "12 months", "value": 12 },
+        { "label": "24 months", "value": 24 },
+        { "label": "36 months", "value": 36 },
+        { "label": "60 months", "value": 60 },
+        { "label": "120 months", "value": 120 },
+        { "label": "180 months", "value": 180 },
+        { "label": "360 months", "value": 360 }
+      ]
+    },
+    {
+      "name": "annualIncome",
+      "label": "Annual Income (USD)",
+      "type": "number",
+      "required": true,
+      "placeholder": "100000",
+      "validation": {
+        "min": 20000,
+        "max": 10000000
+      }
+    },
+    {
+      "name": "creditScore",
+      "label": "Credit Score",
+      "type": "number",
+      "required": true,
+      "placeholder": "750",
+      "validation": {
+        "min": 300,
+        "max": 850
+      }
+    },
+    {
+      "name": "employmentStatus",
+      "label": "Employment Status",
+      "type": "select",
+      "required": true,
+      "options": [
+        { "label": "Employed", "value": "EMPLOYED" },
+        { "label": "Self-Employed", "value": "SELF_EMPLOYED" },
+        { "label": "Unemployed", "value": "UNEMPLOYED" },
+        { "label": "Retired", "value": "RETIRED" }
+      ]
+    },
+    {
+      "name": "termsAccepted",
+      "label": "I agree to the terms and conditions",
+      "type": "checkbox",
+      "required": true,
+      "validation": {
+        "mustBeTrue": true
+      }
+    }
+  ],
+  "layout": {
+    "sections": [
+      {
+        "title": "Personal Information",
+        "fields": ["applicantName", "applicantEmail", "applicantPhone"]
+      },
+      {
+        "title": "Loan Details",
+        "fields": ["loanAmount", "loanTerm"]
+      },
+      {
+        "title": "Financial Information",
+        "fields": ["annualIncome", "creditScore", "employmentStatus"]
+      },
+      {
+        "title": "Agreement",
+        "fields": ["termsAccepted"]
+      }
+    ]
+  }
+}
