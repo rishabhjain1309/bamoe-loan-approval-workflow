@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+
+  # =========================
+  # Kogito Data Index (No DB needed for basic use)
+  # =========================
+  data-index:
+    image: quay.io/kiegroup/kogito-data-index-ephemeral:latest
+    container_name: kogito-data-index
+    ports:
+      - "8180:8080"
+
+  # =========================
+  # Kogito Management Console
+  # =========================
+  management-console:
+    image: quay.io/kiegroup/kogito-management-console:latest
+    container_name: kogito-management-console
+    depends_on:
+      - data-index
+    environment:
+      KOGITO_DATA_INDEX_HTTP_URL: http://data-index:8080
+      QUARKUS_OIDC_ENABLED: "false"
+    ports:
+      - "8280:8080"

@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.util.Map;
+import org.kie.kogito.process.Process;
+import org.kie.kogito.process.ProcessInstance;
 
 @RestController
 @RequestMapping("/forms")
@@ -25,6 +27,9 @@ public class FormController {
 
     @Autowired
     private LoanApprovalService loanApprovalService;
+
+    @Autowired
+    Process<org.kie.kogito.Model> loanApprovalProcess;
 
     /**
      * GET /api/forms/loan-application
