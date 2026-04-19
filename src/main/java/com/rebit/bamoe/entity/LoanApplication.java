@@ -1,13 +1,10 @@
 package com.rebit.bamoe.entity;
 
 import lombok.Data;
-import lombok.Getter;
-import lombok.Setter;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
-import javax.persistence.*;
+import jakarta.persistence.*;
 
 @Entity
 @Table(name = "loan_applications")
@@ -18,17 +15,17 @@ public class LoanApplication {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
 
-    // ============ APPLICANT INFORMATION ============
+    // ======== APPLICANT INFORMATION ========
     private String applicantName;
     private String applicantEmail;
     private String applicantPhone;
 
-    // ============ LOAN DETAILS ============
+    // ======== LOAN DETAILS ========
     @Column(nullable = false)
     private BigDecimal loanAmount;
 
     @Column(nullable = false)
-    private Integer loanTerm; // months
+    private Integer loanTerm;
 
     @Column(nullable = false)
     private BigDecimal annualIncome;
@@ -39,14 +36,38 @@ public class LoanApplication {
     private String employmentStatus;
     private boolean termsAccepted;
 
-    // ============ WORKFLOW STATUS ============
+    // ======== WORKFLOW ASSIGNMENT ========
+    /**
+     * Username of the maker assigned to review this specific application.
+     * Set from FormConfig.makerAssignee at submission time.
+     * Also used as the Kogito process variable "makerAssignee".
+     */
+    @Column(name = "maker_assignee")
+    private String makerAssignee;
+
+    /**
+     * Username of the checker assigned to final-review this application.
+     * Set from FormConfig.checkerAssignee at submission time.
+     * Also used as the Kogito process variable "checkerAssignee".
+     */
+    @Column(name = "checker_assignee")
+    private String checkerAssignee;
+
+    /**
+     * The Kogito process instance ID returned when we start the BPMN process.
+     * Use this to query Kogito for task status, complete tasks, abort process, etc.
+     */
+    @Column(name = "process_instance_id")
+    private String processInstanceId;
+
+    // ======== WORKFLOW STATUS ========
     @Enumerated(EnumType.STRING)
     private ApplicationStatus status;
 
     @Column(name = "current_stage")
-    private String currentStage; // SUBMITTED, MAKER_REVIEW, CHECKER_REVIEW
+    private String currentStage;
 
-    // ============ MAKER REVIEW DETAILS ============
+    // ======== MAKER REVIEW DETAILS ========
     @Column(name = "maker_name")
     private String makerName;
 
@@ -54,7 +75,7 @@ public class LoanApplication {
     private String makerEmail;
 
     @Column(name = "maker_decision")
-    private String makerDecision; // APPROVED, REJECTED, EDIT_REQUESTED
+    private String makerDecision;
 
     @Column(name = "maker_comments", length = 2000)
     private String makerComments;
@@ -62,7 +83,7 @@ public class LoanApplication {
     @Column(name = "maker_review_date")
     private LocalDateTime makerReviewDate;
 
-    // ============ CHECKER REVIEW DETAILS ============
+    // ======== CHECKER REVIEW DETAILS ========
     @Column(name = "checker_name")
     private String checkerName;
 
@@ -70,7 +91,7 @@ public class LoanApplication {
     private String checkerEmail;
 
     @Column(name = "checker_decision")
-    private String checkerDecision; // APPROVED, REJECTED, SEND_BACK
+    private String checkerDecision;
 
     @Column(name = "checker_comments", length = 2000)
     private String checkerComments;
@@ -78,23 +99,20 @@ public class LoanApplication {
     @Column(name = "checker_review_date")
     private LocalDateTime checkerReviewDate;
 
-    // ============ EDIT TRACKING ============
+    // ======== EDIT TRACKING ========
     @Column(name = "edit_reason", length = 1000)
     private String editReason;
 
     @Column(name = "edit_count")
     private Integer editCount = 0;
 
-    // ============ AUDIT ============
+    // ======== AUDIT ========
     @Column(name = "created_date", nullable = false, updatable = false)
     private LocalDate createdDate;
 
-    @Column(name = "process_instance_id")
-    private String processInstanceId;
-
     private String rejectionReason;
 
-    // ============ CONSTRUCTORS ============
+    // ======== CONSTRUCTORS ========
     public LoanApplication() {
         this.status = ApplicationStatus.NEW;
         this.currentStage = "NEW";
@@ -102,45 +120,49 @@ public class LoanApplication {
         this.editCount = 0;
     }
 
-    // ============ HELPER METHODS ============
-    public void submitForMakerReview() {
+    // ======== WORKFLOW TRANSITION HELPERS ========
+    public void submitForMakerReview(String makerAssignee, String checkerAssignee) {
+        this.makerAssignee = makerAssignee;
+        this.checkerAssignee = checkerAssignee;
         this.status = ApplicationStatus.SUBMITTED;
         this.currentStage = "MAKER_REVIEW";
     }
 
-    public void approveBrMaker() {
-        this.makerDecision = "APPROVED";
-        this.makerReviewDate = LocalDateTime.now();
+    public void moveToCheckerReview() {
         this.currentStage = "CHECKER_REVIEW";
         this.status = ApplicationStatus.MAKER_APPROVED;
     }
 
     public void rejectByMaker(String reason) {
-        this.makerDecision = "REJECTED";
+        this.makerDecision = "REJECT";
         this.makerComments = reason;
         this.makerReviewDate = LocalDateTime.now();
         this.status = ApplicationStatus.MAKER_REJECTED;
+        this.currentStage = "REJECTED";
     }
 
     public void requestEditByMaker(String reason) {
-        this.makerDecision = "EDIT_REQUESTED";
+        this.makerDecision = "REQUEST_EDIT";
         this.editReason = reason;
         this.makerReviewDate = LocalDateTime.now();
         this.currentStage = "EDIT_REQUESTED";
+        this.status = ApplicationStatus.EDIT_REQUESTED;
         this.editCount++;
     }
 
     public void approveByChecker() {
-        this.checkerDecision = "APPROVED";
+        this.checkerDecision = "APPROVE";
         this.checkerReviewDate = LocalDateTime.now();
         this.status = ApplicationStatus.APPROVED;
+        this.currentStage = "APPROVED";
     }
 
     public void rejectByChecker(String reason) {
-        this.checkerDecision = "REJECTED";
+        this.checkerDecision = "REJECT";
         this.checkerComments = reason;
         this.checkerReviewDate = LocalDateTime.now();
         this.status = ApplicationStatus.REJECTED;
+        this.currentStage = "REJECTED";
     }
 
     public void sendBackToMaker(String reason) {

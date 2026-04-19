@@ -1,16 +1,25 @@
 package com.rebit.bamoe.controller;
 
 import com.rebit.bamoe.entity.LoanApplication;
-import com.rebit.bamoe.service.ApprovalService;
 import com.rebit.bamoe.repo.LoanApplicationRepository;
+import com.rebit.bamoe.service.ApprovalService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.List;
-import java.util.stream.Collectors;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * REST endpoints for maker and checker decisions.
+ *
+ * All endpoints call ApprovalService which:
+ *   1. Updates the LoanApplication in MySQL
+ *   2. Completes the Kogito user task (advancing the BPMN)
+ *
+ * Base path: /api/approval  (because server.servlet.context-path=/api)
+ */
 @RestController
 @RequestMapping("/approval")
 @CrossOrigin(origins = "*")
@@ -22,60 +31,65 @@ public class ApprovalController {
     @Autowired
     private LoanApplicationRepository loanRepository;
 
-    // ============================================================
+    // =====================================================================
     // MAKER ENDPOINTS
-    // ============================================================
+    // =====================================================================
 
     /**
-     * Get all applications pending maker review
-     * GET /api/approval/maker/pending
+     * List all applications awaiting maker review.
+     * Optionally filter by the logged-in maker's username.
+     *
+     * GET /api/approval/maker/pending?assignee=maker1
      */
     @GetMapping("/maker/pending")
-    public ResponseEntity<List<LoanApplication>> getMakerPending() {
-        List<LoanApplication> pending = loanRepository.findAll().stream()
-                .filter(app -> "MAKER_REVIEW".equals(app.getCurrentStage()))
-                .collect(Collectors.toList());
+    public ResponseEntity<List<LoanApplication>> getMakerPending(
+            @RequestParam(required = false) String assignee) {
+
+        List<LoanApplication> pending;
+        if (assignee != null && !assignee.isBlank()) {
+            pending = loanRepository.findByCurrentStageAndMakerAssignee("MAKER_REVIEW", assignee);
+        } else {
+            pending = loanRepository.findByCurrentStage("MAKER_REVIEW");
+        }
         return ResponseEntity.ok(pending);
     }
 
     /**
-     * Get single application for maker review
+     * Get a single application for maker review.
      * GET /api/approval/maker/review/{id}
      */
     @GetMapping("/maker/review/{id}")
-    public ResponseEntity<LoanApplication> getMakerReviewDetails(@PathVariable Long id) {
-        LoanApplication app = approvalService.getApplicationDetails(id);
+    public ResponseEntity<?> getMakerReviewDetails(@PathVariable Long id) {
         if (!approvalService.isInMakerReview(id)) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Application " + id + " is not in MAKER_REVIEW stage"));
         }
-        return ResponseEntity.ok(app);
+        return ResponseEntity.ok(approvalService.getApplicationDetails(id));
     }
 
     /**
-     * Maker approves application
+     * Maker approves. Advances BPMN to Checker Review.
      * POST /api/approval/maker/{id}/approve
+     * Params: makerName, makerEmail, comments (optional)
      */
     @PostMapping("/maker/{id}/approve")
-    public ResponseEntity<Map<String, String>> approveBrMaker(
+    public ResponseEntity<Map<String, String>> approveByMaker(
             @PathVariable Long id,
             @RequestParam String makerName,
             @RequestParam String makerEmail,
             @RequestParam(required = false) String comments) {
 
-        try {
-            approvalService.approveBrMaker(id, makerName, makerEmail, comments);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application approved by maker");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.approveByMaker(id, makerName, makerEmail, comments);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application approved by maker. Now in Checker Review.",
+                "applicationId", id.toString()
+        ));
     }
 
     /**
-     * Maker rejects application
+     * Maker rejects. BPMN ends at EndRejectedByMaker.
      * POST /api/approval/maker/{id}/reject
+     * Params: makerName, makerEmail, rejectReason
      */
     @PostMapping("/maker/{id}/reject")
     public ResponseEntity<Map<String, String>> rejectByMaker(
@@ -84,20 +98,17 @@ public class ApprovalController {
             @RequestParam String makerEmail,
             @RequestParam String rejectReason) {
 
-        try {
-            approvalService.rejectByMaker(id, makerName, makerEmail, rejectReason);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application rejected by maker");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.rejectByMaker(id, makerName, makerEmail, rejectReason);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application rejected by maker.",
+                "applicationId", id.toString()
+        ));
     }
 
     /**
-     * Maker requests edit from applicant
+     * Maker requests edit. BPMN loops back to MakerReview after user resubmits.
      * POST /api/approval/maker/{id}/request-edit
+     * Params: makerName, makerEmail, editReason
      */
     @PostMapping("/maker/{id}/request-edit")
     public ResponseEntity<Map<String, String>> requestEdit(
@@ -106,48 +117,51 @@ public class ApprovalController {
             @RequestParam String makerEmail,
             @RequestParam String editReason) {
 
-        try {
-            approvalService.requestEditByMaker(id, makerName, makerEmail, editReason);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Edit request sent to applicant");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.requestEditByMaker(id, makerName, makerEmail, editReason);
+        return ResponseEntity.ok(Map.of(
+                "message", "Edit request sent to applicant.",
+                "applicationId", id.toString()
+        ));
     }
 
-    // ============================================================
+    // =====================================================================
     // CHECKER ENDPOINTS
-    // ============================================================
+    // =====================================================================
 
     /**
-     * Get all applications pending checker review
-     * GET /api/approval/checker/pending
+     * List all applications awaiting checker review.
+     * Optionally filter by the logged-in checker's username.
+     *
+     * GET /api/approval/checker/pending?assignee=checker1
      */
     @GetMapping("/checker/pending")
-    public ResponseEntity<List<LoanApplication>> getCheckerPending() {
-        List<LoanApplication> pending = loanRepository.findAll().stream()
-                .filter(app -> "CHECKER_REVIEW".equals(app.getCurrentStage()))
-                .collect(Collectors.toList());
+    public ResponseEntity<List<LoanApplication>> getCheckerPending(
+            @RequestParam(required = false) String assignee) {
+
+        List<LoanApplication> pending;
+        if (assignee != null && !assignee.isBlank()) {
+            pending = loanRepository.findByCurrentStageAndCheckerAssignee("CHECKER_REVIEW", assignee);
+        } else {
+            pending = loanRepository.findByCurrentStage("CHECKER_REVIEW");
+        }
         return ResponseEntity.ok(pending);
     }
 
     /**
-     * Get single application for checker review
+     * Get a single application for checker review.
      * GET /api/approval/checker/review/{id}
      */
     @GetMapping("/checker/review/{id}")
-    public ResponseEntity<LoanApplication> getCheckerReviewDetails(@PathVariable Long id) {
-        LoanApplication app = approvalService.getApplicationDetails(id);
+    public ResponseEntity<?> getCheckerReviewDetails(@PathVariable Long id) {
         if (!approvalService.isInCheckerReview(id)) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Application " + id + " is not in CHECKER_REVIEW stage"));
         }
-        return ResponseEntity.ok(app);
+        return ResponseEntity.ok(approvalService.getApplicationDetails(id));
     }
 
     /**
-     * Checker approves application (Final)
+     * Checker approves (final approval). BPMN ends at EndApproved.
      * POST /api/approval/checker/{id}/approve
      */
     @PostMapping("/checker/{id}/approve")
@@ -157,19 +171,15 @@ public class ApprovalController {
             @RequestParam String checkerEmail,
             @RequestParam(required = false) String comments) {
 
-        try {
-            approvalService.approveByChecker(id, checkerName, checkerEmail, comments);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application approved by checker");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.approveByChecker(id, checkerName, checkerEmail, comments);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application APPROVED.",
+                "applicationId", id.toString()
+        ));
     }
 
     /**
-     * Checker rejects application
+     * Checker rejects. BPMN ends at EndRejectedByChecker.
      * POST /api/approval/checker/{id}/reject
      */
     @PostMapping("/checker/{id}/reject")
@@ -179,19 +189,15 @@ public class ApprovalController {
             @RequestParam String checkerEmail,
             @RequestParam String rejectReason) {
 
-        try {
-            approvalService.rejectByChecker(id, checkerName, checkerEmail, rejectReason);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application rejected by checker");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.rejectByChecker(id, checkerName, checkerEmail, rejectReason);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application rejected by checker.",
+                "applicationId", id.toString()
+        ));
     }
 
     /**
-     * Checker sends application back to maker
+     * Checker sends back to maker. BPMN loops back to MakerReview.
      * POST /api/approval/checker/{id}/send-back
      */
     @PostMapping("/checker/{id}/send-back")
@@ -201,76 +207,54 @@ public class ApprovalController {
             @RequestParam String checkerEmail,
             @RequestParam String reason) {
 
-        try {
-            approvalService.sendBackToMaker(id, checkerName, checkerEmail, reason);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application sent back to maker");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        approvalService.sendBackToMaker(id, checkerName, checkerEmail, reason);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application sent back to maker for review.",
+                "applicationId", id.toString()
+        ));
     }
 
-    // ============================================================
-    // APPLICANT ENDPOINTS
-    // ============================================================
+    // =====================================================================
+    // APPLICANT RESUBMIT
+    // =====================================================================
 
     /**
-     * User resubmits application after edit request
+     * Applicant edits and resubmits after maker requested edit.
      * PUT /api/approval/applications/{id}/resubmit
      */
     @PutMapping("/applications/{id}/resubmit")
-    public ResponseEntity<Map<String, String>> resubmitApplication(
+    public ResponseEntity<?> resubmitApplication(
             @PathVariable Long id,
             @RequestBody LoanApplication updatedApp) {
 
-        try {
-            if (!approvalService.isEditRequested(id)) {
-                return ResponseEntity.badRequest().body(
-                        Map.of("error", "Application is not in edit requested state")
-                );
-            }
-
-            approvalService.resubmitAfterEdit(id, updatedApp);
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Application resubmitted successfully");
-            response.put("applicationId", id.toString());
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+        if (!approvalService.isEditRequested(id)) {
+            return ResponseEntity.badRequest().body(
+                    Map.of("error", "Application is not in EDIT_REQUESTED state"));
         }
+        approvalService.resubmitAfterEdit(id, updatedApp);
+        return ResponseEntity.ok(Map.of(
+                "message", "Application resubmitted. Awaiting maker review.",
+                "applicationId", id.toString()
+        ));
     }
 
-    // ============================================================
-    // AUDIT ENDPOINTS
-    // ============================================================
+    // =====================================================================
+    // STATUS + AUDIT
+    // =====================================================================
 
     /**
-     * Get complete audit trail of application
-     * GET /api/approval/applications/{id}/audit
-     */
-    @GetMapping("/applications/{id}/audit")
-    public ResponseEntity<String> getAuditTrail(@PathVariable Long id) {
-        try {
-            String audit = approvalService.getAuditTrail(id);
-            return ResponseEntity.ok(audit);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * Get application status
      * GET /api/approval/applications/{id}/status
      */
     @GetMapping("/applications/{id}/status")
     public ResponseEntity<LoanApplication> getApplicationStatus(@PathVariable Long id) {
-        try {
-            LoanApplication app = approvalService.getApplicationDetails(id);
-            return ResponseEntity.ok(app);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        return ResponseEntity.ok(approvalService.getApplicationDetails(id));
+    }
+
+    /**
+     * GET /api/approval/applications/{id}/audit
+     */
+    @GetMapping("/applications/{id}/audit")
+    public ResponseEntity<String> getAuditTrail(@PathVariable Long id) {
+        return ResponseEntity.ok(approvalService.getAuditTrail(id));
     }
 }
