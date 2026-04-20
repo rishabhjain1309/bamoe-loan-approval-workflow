@@ -6,7 +6,6 @@ import com.rebit.bamoe.repo.LoanApplicationRepository;
 import org.kie.kogito.Model;
 import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessInstance;
-import org.kie.kogito.process.Processes;
 import org.kie.kogito.process.WorkItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -26,8 +24,8 @@ import java.util.Optional;
  *   1. Update the LoanApplication entity in MySQL (for your business records)
  *   2. Complete the Kogito user task (so the BPMN engine advances to the next step)
  *
- * Step 2 is what was missing before. Without completing the Kogito task,
- * the BPMN process just sits frozen at the user task forever.
+ * NOTE: We inject the concrete generated Process bean directly by name
+ * instead of using the Processes registry, which avoids the scan issue.
  */
 @Service
 public class ApprovalService {
@@ -40,21 +38,22 @@ public class ApprovalService {
     @Autowired
     private NotificationService notificationService;
 
+    /**
+     * Inject the generated LoanApprovalProcessProcess bean directly.
+     * Kogito generates a Spring bean named "loanApprovalProcess" (camelCase of the process id).
+     * Using the interface type Process<Model> lets Spring resolve it without ambiguity.
+     */
     @Autowired
-    private Processes processes;
+    @org.springframework.beans.factory.annotation.Qualifier("LoanApprovalProcess")
+    private Process<? extends Model> loanApprovalProcess;
 
     // =====================================================================
     // MAKER DECISIONS
     // =====================================================================
 
-    /**
-     * Maker approves the application.
-     * BPMN: MakerDecisionGateway takes the "APPROVE" branch → CheckerReview task opens.
-     */
     public void approveByMaker(Long applicationId, String makerName, String makerEmail, String comments) {
         LoanApplication app = findOrThrow(applicationId);
 
-        // Update DB record
         app.setMakerName(makerName);
         app.setMakerEmail(makerEmail);
         app.setMakerDecision("APPROVE");
@@ -63,7 +62,6 @@ public class ApprovalService {
         app.moveToCheckerReview();
         loanRepository.save(app);
 
-        // Complete the Kogito "Maker Review" user task with makerDecision = APPROVE
         completeKogitoTask(app, "MakerReview", Map.of(
                 "makerDecision", "APPROVE",
                 "comments", comments != null ? comments : ""
@@ -72,10 +70,6 @@ public class ApprovalService {
         notificationService.notifyMakerApproval(app);
     }
 
-    /**
-     * Maker rejects the application.
-     * BPMN: MakerDecisionGateway takes the "REJECT" branch → EndRejectedByMaker.
-     */
     public void rejectByMaker(Long applicationId, String makerName, String makerEmail, String rejectReason) {
         LoanApplication app = findOrThrow(applicationId);
 
@@ -93,10 +87,6 @@ public class ApprovalService {
         notificationService.notifyMakerRejection(app);
     }
 
-    /**
-     * Maker requests the applicant to edit and resubmit.
-     * BPMN: MakerDecisionGateway → NotifyEditRequested service task → loops back to MakerReview.
-     */
     public void requestEditByMaker(Long applicationId, String makerName, String makerEmail, String editReason) {
         LoanApplication app = findOrThrow(applicationId);
 
@@ -117,10 +107,6 @@ public class ApprovalService {
     // CHECKER DECISIONS
     // =====================================================================
 
-    /**
-     * Checker approves the application (final approval).
-     * BPMN: CheckerDecisionGateway → EndApproved.
-     */
     public void approveByChecker(Long applicationId, String checkerName, String checkerEmail, String comments) {
         LoanApplication app = findOrThrow(applicationId);
 
@@ -138,10 +124,6 @@ public class ApprovalService {
         notificationService.notifyApproval(app);
     }
 
-    /**
-     * Checker rejects the application.
-     * BPMN: CheckerDecisionGateway → EndRejectedByChecker.
-     */
     public void rejectByChecker(Long applicationId, String checkerName, String checkerEmail, String rejectReason) {
         LoanApplication app = findOrThrow(applicationId);
 
@@ -159,10 +141,6 @@ public class ApprovalService {
         notificationService.notifyRejection(app);
     }
 
-    /**
-     * Checker sends application back to Maker for further review.
-     * BPMN: CheckerDecisionGateway → loops back to MakerReview.
-     */
     public void sendBackToMaker(Long applicationId, String checkerName, String checkerEmail, String reason) {
         LoanApplication app = findOrThrow(applicationId);
 
@@ -196,7 +174,6 @@ public class ApprovalService {
         app.setEmploymentStatus(updatedApp.getEmploymentStatus());
         app.setTermsAccepted(updatedApp.isTermsAccepted());
 
-        // Reset back to maker review
         app.setStatus(ApplicationStatus.SUBMITTED);
         app.setCurrentStage("MAKER_REVIEW");
         app.setMakerDecision(null);
@@ -204,7 +181,6 @@ public class ApprovalService {
 
         loanRepository.save(app);
         notificationService.notifyResubmission(app);
-        // No Kogito task to complete here - the BPMN loop already returned to MakerReview
     }
 
     // =====================================================================
@@ -269,17 +245,7 @@ public class ApprovalService {
     // PRIVATE: Kogito task completion
     // =====================================================================
 
-    /**
-     * Finds the active user task with the given name on the given process instance,
-     * then completes it with the provided output variables.
-     *
-     * This is what actually advances the BPMN engine.
-     *
-     * @param app         the loan application (must have processInstanceId set)
-     * @param taskName    the name attribute of the userTask in the BPMN (e.g. "MakerReview")
-     * @param outputVars  variables to write back into the process (e.g. makerDecision)
-     */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private void completeKogitoTask(LoanApplication app, String taskName, Map<String, Object> outputVars) {
         if (app.getProcessInstanceId() == null) {
             log.warn("No processInstanceId on application {}. Skipping Kogito task completion.", app.getId());
@@ -287,60 +253,36 @@ public class ApprovalService {
         }
 
         try {
-            // Determine which process this application belongs to
-            // We try all registered processes - for production, store workflowId in LoanApplication too
-            for (Process<?> process : getAllProcesses()) {
-                Process<Model> typedProcess = (Process<Model>) process;
-                Optional<ProcessInstance<Model>> instanceOpt = typedProcess
-                        .instances()
-                        .findById(app.getProcessInstanceId());
+            Process typedProcess = (Process) loanApprovalProcess;
+            Optional<ProcessInstance> instanceOpt = typedProcess.instances()
+                    .findById(app.getProcessInstanceId());
 
-                if (instanceOpt.isEmpty()) continue;
-
-                ProcessInstance<Model> instance = instanceOpt.get();
-
-                // Find the active work item (user task) matching the task name
-                List<WorkItem> workItems = instance.workItems();
-                Optional<WorkItem> taskItem = workItems.stream()
-                        .filter(wi -> taskName.equals(wi.getName()) ||
-                                wi.getName().replace(" ", "").equalsIgnoreCase(taskName))
-                        .findFirst();
-
-                if (taskItem.isPresent()) {
-                    instance.completeWorkItem(taskItem.get().getId(), outputVars);
-                    log.info("Completed Kogito task '{}' for process instance {}", taskName, app.getProcessInstanceId());
-                } else {
-                    log.warn("Task '{}' not found in active work items for instance {}. Active tasks: {}",
-                            taskName, app.getProcessInstanceId(),
-                            workItems.stream().map(WorkItem::getName).toList());
-                }
+            if (instanceOpt.isEmpty()) {
+                log.warn("Process instance {} not found.", app.getProcessInstanceId());
                 return;
             }
 
-            log.warn("Process instance {} not found in any registered Kogito process.", app.getProcessInstanceId());
+            ProcessInstance instance = instanceOpt.get();
+            List<WorkItem> workItems = instance.workItems();
+
+            Optional<WorkItem> taskItem = workItems.stream()
+                    .filter(wi -> taskName.equals(wi.getName()) ||
+                            wi.getName().replace(" ", "").equalsIgnoreCase(taskName))
+                    .findFirst();
+
+            if (taskItem.isPresent()) {
+                instance.completeWorkItem(taskItem.get().getId(), outputVars);
+                log.info("Completed Kogito task '{}' for process instance {}", taskName, app.getProcessInstanceId());
+            } else {
+                log.warn("Task '{}' not found in active work items for instance {}. Active tasks: {}",
+                        taskName, app.getProcessInstanceId(),
+                        workItems.stream().map(WorkItem::getName).toList());
+            }
 
         } catch (Exception e) {
-            // Log but don't throw - the DB record is already updated.
-            // A failed Kogito completion means the BPMN is out of sync with DB,
-            // which you can recover by checking the management console.
             log.error("Failed to complete Kogito task '{}' for process instance {}: {}",
                     taskName, app.getProcessInstanceId(), e.getMessage(), e);
         }
-    }
-
-    /**
-     * Returns all registered Kogito processes.
-     * Processes.processById() only works if you know the ID,
-     * so we iterate all of them to find the one with the matching instance.
-     */
-    private Iterable<? extends Process<?>> getAllProcesses() {
-        // Kogito's Processes registry doesn't expose a list() method directly,
-        // so we use the fact that it's Iterable in some versions,
-        // or we can just try the known process IDs.
-        // The simplest approach: store workflowId in LoanApplication (see TODO below)
-        // For now, try the one we know about.
-        Process<?> p = processes.processById("LoanApprovalProcess");
-        return p != null ? List.of(p) : List.of();
     }
 
     private LoanApplication findOrThrow(Long id) {

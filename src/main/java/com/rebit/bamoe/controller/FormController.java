@@ -6,9 +6,11 @@ import com.rebit.bamoe.repo.FormConfigRepository;
 import com.rebit.bamoe.repo.LoanApplicationRepository;
 import com.rebit.bamoe.service.FormService;
 import com.rebit.bamoe.service.ValidationResult;
+import org.kie.kogito.Model;
+import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessInstance;
-import org.kie.kogito.process.Processes;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,25 +33,18 @@ public class FormController {
     @Autowired
     private FormConfigRepository formConfigRepository;
 
+    /**
+     * Inject the generated LoanApprovalProcessProcess bean directly by qualifier.
+     * This avoids the Processes registry lookup entirely.
+     */
     @Autowired
-    private Processes processes;
+    @Qualifier("LoanApprovalProcess")
+    private Process<? extends Model> loanApprovalProcess;
 
     // =====================================================================
     // FORM CONFIG MANAGEMENT
     // =====================================================================
 
-    /**
-     * Create or update a form->workflow mapping.
-     *
-     * POST /api/forms/config
-     * {
-     *   "formName": "loanApplicationForm",
-     *   "formTitle": "Loan Application",
-     *   "workflowId": "LoanApprovalProcess",
-     *   "makerAssignee": "maker1",
-     *   "checkerAssignee": "checker1"
-     * }
-     */
     @PostMapping("/config")
     public ResponseEntity<?> createFormConfig(@RequestBody FormConfig config) {
         formConfigRepository.findByFormName(config.getFormName())
@@ -79,11 +74,6 @@ public class FormController {
     // FORM SUBMISSION
     // =====================================================================
 
-    /**
-     * Submit a form. Validates -> saves to DB -> starts Kogito BPMN process.
-     *
-     * POST /api/forms/{formName}/submit
-     */
     @PostMapping("/{formName}/submit")
     public ResponseEntity<?> submitForm(
             @PathVariable String formName,
@@ -98,7 +88,7 @@ public class FormController {
             ));
         }
 
-        // 2. Load form config (which workflow + who are the assignees)
+        // 2. Load form config
         FormConfig config = formConfigRepository.findByFormNameAndActiveTrue(formName)
                 .orElseThrow(() -> new RuntimeException(
                         "No active form config for: " + formName +
@@ -110,7 +100,7 @@ public class FormController {
         LoanApplication savedApp = loanRepository.save(application);
 
         try {
-            // 4. Build the process variables map
+            // 4. Build process variables map
             Map<String, Object> processVars = new HashMap<>();
             processVars.put("applicationId",   savedApp.getId());
             processVars.put("makerAssignee",   config.getMakerAssignee());
@@ -120,65 +110,40 @@ public class FormController {
             processVars.put("comments",        "");
             processVars.put("approved",        false);
 
-            // 5. Start the Kogito process.
-            //
-            // WHY @SuppressWarnings("rawtypes") here:
-            //   Process<T> has two createInstance overloads:
-            //     createInstance(T model)          -- where T is the generated type
-            //     createInstance(Model model)      -- the interface version
-            //   When you cast to Process<Model>, javac sees BOTH as equally valid
-            //   for a Model argument -> "ambiguous method call" compile error.
-            //
-            //   The fix: use the raw type Process (no <T>). With a raw type,
-            //   javac picks the most specific overload without ambiguity.
-            //   The @SuppressWarnings suppresses the "raw types" warning.
-            @SuppressWarnings("rawtypes")
-            org.kie.kogito.process.Process rawProcess =
-                    processes.processById(config.getWorkflowId());
+            // 5. Start the Kogito process using the directly injected bean
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            Process rawProcess = (Process) loanApprovalProcess;
 
-            if (rawProcess == null) {
-                throw new RuntimeException(
-                        "Kogito process not found: '" + config.getWorkflowId() + "'. " +
-                                "Check: (1) kogito-maven-plugin ran, " +
-                                "(2) BPMN file has id=\"" + config.getWorkflowId() + "\", " +
-                                "(3) target/generated-sources/kogito/ contains the generated classes.");
-            }
-
-            // createModel() returns the concrete generated class (LoanApprovalProcessModel)
-            // fromMap() fills its fields from our variables map
             org.kie.kogito.Model model = (org.kie.kogito.Model) rawProcess.createModel();
             model.fromMap(processVars);
 
-            // Now createInstance(model) is unambiguous: we're passing the
-            // concrete generated type, not the raw Model interface
             @SuppressWarnings("unchecked")
             ProcessInstance<?> instance = rawProcess.createInstance(model);
             instance.start();
 
-            // 6. Store process instance ID so we can complete tasks later
+            // 6. Store process instance ID
             savedApp.setProcessInstanceId(instance.id());
             loanRepository.save(savedApp);
 
             return ResponseEntity.ok(Map.of(
-                    "success",          true,
-                    "message",          "Submitted! Awaiting review by " + config.getMakerAssignee(),
-                    "applicationId",    savedApp.getId(),
+                    "success",           true,
+                    "message",           "Submitted! Awaiting review by " + config.getMakerAssignee(),
+                    "applicationId",     savedApp.getId(),
                     "processInstanceId", instance.id(),
-                    "workflowId",       config.getWorkflowId(),
-                    "makerAssignee",    config.getMakerAssignee(),
-                    "checkerAssignee",  config.getCheckerAssignee(),
-                    "status",           savedApp.getStatus().name(),
-                    "currentStage",     savedApp.getCurrentStage()
+                    "workflowId",        config.getWorkflowId(),
+                    "makerAssignee",     config.getMakerAssignee(),
+                    "checkerAssignee",   config.getCheckerAssignee(),
+                    "status",            savedApp.getStatus().name(),
+                    "currentStage",      savedApp.getCurrentStage()
             ));
 
         } catch (Exception e) {
             savedApp.setCurrentStage("WORKFLOW_START_FAILED");
             loanRepository.save(savedApp);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "success", false,
-                    "message", "Form saved but workflow failed: " + e.getMessage(),
-                    "applicationId", savedApp.getId(),
-                    "hint", "Run: dir target\\generated-sources\\kogito\\ and check LoanApprovalProcessModel.java exists"
+                    "success",       false,
+                    "message",       "Form saved but workflow failed: " + e.getMessage(),
+                    "applicationId", savedApp.getId()
             ));
         }
     }
@@ -191,7 +156,7 @@ public class FormController {
         return ResponseEntity.ok(Map.of("isValid", v.isValid(), "errors", v.getErrors()));
     }
 
-    // Legacy aliases so old URLs still work
+    // Legacy aliases
     @PostMapping("/loan-application/submit")
     public ResponseEntity<?> submitLoanApplicationForm(@RequestBody Map<String, Object> formData) {
         return submitForm("loanApplicationForm", formData);

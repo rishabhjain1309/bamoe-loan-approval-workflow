@@ -17,7 +17,6 @@
            isExecutable="true"
            processType="Public">
 
-    <!-- Process Variables -->
     <property id="applicationId"   name="applicationId"   itemSubjectRef="__dT_Long"/>
     <property id="makerAssignee"   name="makerAssignee"   itemSubjectRef="__dT_String"/>
     <property id="checkerAssignee" name="checkerAssignee" itemSubjectRef="__dT_String"/>
@@ -26,19 +25,10 @@
     <property id="comments"        name="comments"        itemSubjectRef="__dT_String"/>
     <property id="approved"        name="approved"        itemSubjectRef="__dT_Boolean"/>
 
-    <!-- ===== START ===== -->
     <startEvent id="Start" name="Application Submitted">
       <outgoing>flow_start_to_join</outgoing>
     </startEvent>
 
-    <!--
-      JOIN GATEWAY before MakerReview.
-      jBPM rule: a UserTask can only have ONE incoming connection.
-      All paths that lead to MakerReview must merge here first:
-        1. flow_start_to_join         (new submission)
-        2. flow_sendback_to_join      (checker sends back)
-        3. flow_edit_to_join          (applicant resubmits after edit)
-    -->
     <exclusiveGateway id="JoinToMaker" name="Route to Maker" gatewayDirection="Converging">
       <incoming>flow_start_to_join</incoming>
       <incoming>flow_sendback_to_join</incoming>
@@ -46,7 +36,6 @@
       <outgoing>flow_join_to_maker</outgoing>
     </exclusiveGateway>
 
-    <!-- ===== MAKER REVIEW (User Task) ===== -->
     <userTask id="MakerReview" name="Maker Review">
       <documentation>Maker reviews the application: Approve, Reject, or Request Edit</documentation>
       <incoming>flow_join_to_maker</incoming>
@@ -88,7 +77,6 @@
       </dataOutputAssociation>
     </userTask>
 
-    <!-- ===== MAKER DECISION GATEWAY ===== -->
     <exclusiveGateway id="MakerGateway" name="Maker Decision" gatewayDirection="Diverging">
       <incoming>flow_maker_to_gateway</incoming>
       <outgoing>flow_maker_approve</outgoing>
@@ -96,13 +84,12 @@
       <outgoing>flow_maker_edit</outgoing>
     </exclusiveGateway>
 
-    <!-- ===== NOTIFY EDIT REQUESTED (Service Task - lightweight, just advances flow) ===== -->
-    <serviceTask id="NotifyEdit" name="Notify Edit Requested">
+    <scriptTask id="NotifyEdit" name="Notify Edit Requested" scriptFormat="http://www.java.com/java">
       <incoming>flow_maker_edit</incoming>
       <outgoing>flow_edit_to_join</outgoing>
-    </serviceTask>
+      <script>System.out.println("Edit requested for application: " + applicationId);</script>
+    </scriptTask>
 
-    <!-- ===== CHECKER REVIEW (User Task) ===== -->
     <userTask id="CheckerReview" name="Checker Review">
       <documentation>Checker performs final review: Approve, Reject, or Send Back to Maker</documentation>
       <incoming>flow_maker_approve</incoming>
@@ -144,7 +131,6 @@
       </dataOutputAssociation>
     </userTask>
 
-    <!-- ===== CHECKER DECISION GATEWAY ===== -->
     <exclusiveGateway id="CheckerGateway" name="Checker Decision" gatewayDirection="Diverging">
       <incoming>flow_checker_to_gateway</incoming>
       <outgoing>flow_checker_approve</outgoing>
@@ -152,7 +138,6 @@
       <outgoing>flow_sendback_to_join</outgoing>
     </exclusiveGateway>
 
-    <!-- ===== END EVENTS ===== -->
     <endEvent id="EndApproved" name="Approved">
       <incoming>flow_checker_approve</incoming>
     </endEvent>
@@ -165,108 +150,88 @@
       <incoming>flow_checker_reject</incoming>
     </endEvent>
 
-    <!-- ===== SEQUENCE FLOWS ===== -->
-    <sequenceFlow id="flow_start_to_join"     sourceRef="Start"          targetRef="JoinToMaker"/>
-    <sequenceFlow id="flow_join_to_maker"     sourceRef="JoinToMaker"    targetRef="MakerReview"/>
-    <sequenceFlow id="flow_maker_to_gateway"  sourceRef="MakerReview"    targetRef="MakerGateway"/>
+    <sequenceFlow id="flow_start_to_join"      sourceRef="Start"          targetRef="JoinToMaker"/>
+    <sequenceFlow id="flow_join_to_maker"      sourceRef="JoinToMaker"    targetRef="MakerReview"/>
+    <sequenceFlow id="flow_maker_to_gateway"   sourceRef="MakerReview"    targetRef="MakerGateway"/>
 
     <sequenceFlow id="flow_maker_approve" name="Approve" sourceRef="MakerGateway" targetRef="CheckerReview">
-      <conditionExpression xsi:type="tFormalExpression">#{makerDecision == 'APPROVE'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return makerDecision != null && makerDecision.equals("APPROVE");]]></conditionExpression>
     </sequenceFlow>
     <sequenceFlow id="flow_maker_reject" name="Reject" sourceRef="MakerGateway" targetRef="EndRejectedMaker">
-      <conditionExpression xsi:type="tFormalExpression">#{makerDecision == 'REJECT'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return makerDecision != null && makerDecision.equals("REJECT");]]></conditionExpression>
     </sequenceFlow>
     <sequenceFlow id="flow_maker_edit" name="Request Edit" sourceRef="MakerGateway" targetRef="NotifyEdit">
-      <conditionExpression xsi:type="tFormalExpression">#{makerDecision == 'REQUEST_EDIT'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return makerDecision != null && makerDecision.equals("REQUEST_EDIT");]]></conditionExpression>
     </sequenceFlow>
 
-    <!-- Edit loop: NotifyEdit -> JoinToMaker (back to maker after applicant edits) -->
-    <sequenceFlow id="flow_edit_to_join"      sourceRef="NotifyEdit"     targetRef="JoinToMaker"/>
-
-    <sequenceFlow id="flow_checker_to_gateway" sourceRef="CheckerReview" targetRef="CheckerGateway"/>
+    <sequenceFlow id="flow_edit_to_join"       sourceRef="NotifyEdit"     targetRef="JoinToMaker"/>
+    <sequenceFlow id="flow_checker_to_gateway" sourceRef="CheckerReview"  targetRef="CheckerGateway"/>
 
     <sequenceFlow id="flow_checker_approve" name="Approve" sourceRef="CheckerGateway" targetRef="EndApproved">
-      <conditionExpression xsi:type="tFormalExpression">#{checkerDecision == 'APPROVE'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return checkerDecision != null && checkerDecision.equals("APPROVE");]]></conditionExpression>
     </sequenceFlow>
     <sequenceFlow id="flow_checker_reject" name="Reject" sourceRef="CheckerGateway" targetRef="EndRejectedChecker">
-      <conditionExpression xsi:type="tFormalExpression">#{checkerDecision == 'REJECT'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return checkerDecision != null && checkerDecision.equals("REJECT");]]></conditionExpression>
     </sequenceFlow>
-
-    <!-- Send back loop: CheckerGateway -> JoinToMaker (back to maker) -->
     <sequenceFlow id="flow_sendback_to_join" name="Send Back" sourceRef="CheckerGateway" targetRef="JoinToMaker">
-      <conditionExpression xsi:type="tFormalExpression">#{checkerDecision == 'SEND_BACK'}</conditionExpression>
+      <conditionExpression xsi:type="tFormalExpression" language="http://www.java.com/java"><![CDATA[return checkerDecision != null && checkerDecision.equals("SEND_BACK");]]></conditionExpression>
     </sequenceFlow>
 
   </process>
 
-  <!-- ================================================================
-       BPMN DIAGRAM - coordinates for visual rendering
-       Open in: Camunda Modeler, VS Code bpmn.io plugin, IntelliJ BPMN plugin
-  ================================================================ -->
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="LoanApprovalProcess">
 
-      <!-- Start -->
       <bpmndi:BPMNShape id="shape_Start" bpmnElement="Start">
         <dc:Bounds x="60" y="232" width="36" height="36"/>
         <bpmndi:BPMNLabel><dc:Bounds x="36" y="275" width="84" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- Join Gateway -->
       <bpmndi:BPMNShape id="shape_JoinToMaker" bpmnElement="JoinToMaker" isMarkerVisible="true">
         <dc:Bounds x="155" y="225" width="50" height="50"/>
         <bpmndi:BPMNLabel><dc:Bounds x="138" y="282" width="84" height="14"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- Maker Review -->
       <bpmndi:BPMNShape id="shape_MakerReview" bpmnElement="MakerReview">
         <dc:Bounds x="270" y="210" width="120" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
 
-      <!-- Maker Gateway -->
       <bpmndi:BPMNShape id="shape_MakerGateway" bpmnElement="MakerGateway" isMarkerVisible="true">
         <dc:Bounds x="455" y="225" width="50" height="50"/>
         <bpmndi:BPMNLabel><dc:Bounds x="437" y="282" width="86" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- Notify Edit -->
       <bpmndi:BPMNShape id="shape_NotifyEdit" bpmnElement="NotifyEdit">
         <dc:Bounds x="430" y="370" width="120" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
 
-      <!-- Checker Review -->
       <bpmndi:BPMNShape id="shape_CheckerReview" bpmnElement="CheckerReview">
         <dc:Bounds x="620" y="210" width="120" height="80"/>
         <bpmndi:BPMNLabel/>
       </bpmndi:BPMNShape>
 
-      <!-- Checker Gateway -->
       <bpmndi:BPMNShape id="shape_CheckerGateway" bpmnElement="CheckerGateway" isMarkerVisible="true">
         <dc:Bounds x="805" y="225" width="50" height="50"/>
         <bpmndi:BPMNLabel><dc:Bounds x="783" y="282" width="94" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- End: Approved -->
       <bpmndi:BPMNShape id="shape_EndApproved" bpmnElement="EndApproved">
         <dc:Bounds x="952" y="232" width="36" height="36"/>
         <bpmndi:BPMNLabel><dc:Bounds x="936" y="275" width="68" height="14"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- End: Rejected by Maker -->
       <bpmndi:BPMNShape id="shape_EndRejectedMaker" bpmnElement="EndRejectedMaker">
         <dc:Bounds x="455" y="102" width="36" height="36"/>
         <bpmndi:BPMNLabel><dc:Bounds x="428" y="72" width="90" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- End: Rejected by Checker -->
       <bpmndi:BPMNShape id="shape_EndRejectedChecker" bpmnElement="EndRejectedChecker">
         <dc:Bounds x="805" y="102" width="36" height="36"/>
         <bpmndi:BPMNLabel><dc:Bounds x="774" y="72" width="98" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
 
-      <!-- Edges -->
       <bpmndi:BPMNEdge id="edge_start_join" bpmnElement="flow_start_to_join">
         <di:waypoint x="96"  y="250"/><di:waypoint x="155" y="250"/>
       </bpmndi:BPMNEdge>
@@ -294,7 +259,6 @@
         <bpmndi:BPMNLabel><dc:Bounds x="488" y="310" width="60" height="27"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
 
-      <!-- Edit loop back to JoinToMaker -->
       <bpmndi:BPMNEdge id="edge_edit_join" bpmnElement="flow_edit_to_join">
         <di:waypoint x="430" y="410"/><di:waypoint x="180" y="410"/><di:waypoint x="180" y="275"/>
         <bpmndi:BPMNLabel><dc:Bounds x="268" y="392" width="74" height="14"/></bpmndi:BPMNLabel>
@@ -314,7 +278,6 @@
         <bpmndi:BPMNLabel><dc:Bounds x="838" y="170" width="34" height="14"/></bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
 
-      <!-- Send back loop to JoinToMaker -->
       <bpmndi:BPMNEdge id="edge_sendback_join" bpmnElement="flow_sendback_to_join">
         <di:waypoint x="830" y="275"/><di:waypoint x="830" y="490"/>
         <di:waypoint x="180" y="490"/><di:waypoint x="180" y="275"/>

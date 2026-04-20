@@ -1,26 +1,33 @@
-version: "3.8"
-
 services:
 
   # =========================
-  # Kogito Data Index (No DB needed for basic use)
+  # Kogito Data Index (ephemeral - in-memory, no DB needed)
+  # Use :latest since 1.44.0.Final tag is not published for this image
   # =========================
   data-index:
     image: quay.io/kiegroup/kogito-data-index-ephemeral:latest
     container_name: kogito-data-index
     ports:
       - "8180:8080"
+    environment:
+      QUARKUS_HTTP_CORS: "true"
+      QUARKUS_HTTP_CORS_ORIGINS: "*"
 
   # =========================
   # Kogito Management Console
+  # Using Apache incubator-kie-kogito-management-console from Docker Hub
+  # Auth disabled via env vars
   # =========================
   management-console:
-    image: quay.io/kiegroup/kogito-management-console:latest
+    image: apache/incubator-kie-kogito-management-console:main
     container_name: kogito-management-console
     depends_on:
       - data-index
     environment:
-      KOGITO_DATA_INDEX_HTTP_URL: http://data-index:8080
+      KOGITO_DATAINDEX_HTTP_URL: http://data-index:8080
+      KOGITO_MANAGEMENT_CONSOLE_DATA_INDEX_ENDPOINT: http://data-index:8080/graphql
       QUARKUS_OIDC_ENABLED: "false"
+      QUARKUS_OIDC_TENANT_ENABLED: "false"
+      KOGITO_AUTH_ENABLED: "false"
     ports:
       - "8280:8080"
